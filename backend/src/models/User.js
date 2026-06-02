@@ -53,6 +53,35 @@ const User = {
     return normalize(data);
   },
 
+  async findByGoogleId(googleId) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, avatar, bio, role, provider, created_at')
+      .eq('google_id', googleId)
+      .maybeSingle();
+    if (error) throw error;
+    return normalize(data);
+  },
+
+  async createOAuth({ name, email, avatar, googleId }) {
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{
+        name,
+        email,
+        password_hash: null,
+        role: 'student',
+        avatar: avatar || '',
+        bio: '',
+        provider: 'google',
+        google_id: googleId,
+      }])
+      .select('id, name, email, avatar, bio, role, provider, created_at')
+      .single();
+    if (error) throw error;
+    return normalize(data);
+  },
+
   async findByIdAndUpdate(id, updates) {
     const { data, error } = await supabase
       .from('users')

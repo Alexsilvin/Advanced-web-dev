@@ -7,6 +7,7 @@ import CourseDetail from './pages/CourseDetail';
 import Profile from './pages/Profile';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import AuthCallback from './pages/AuthCallback';
 
 const ProtectedRoute = ({ children }) => {
   const { token, loading } = useAuth();
@@ -34,6 +35,7 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route
         path="/"
         element={

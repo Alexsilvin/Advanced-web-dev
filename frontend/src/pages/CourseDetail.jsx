@@ -1,19 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Star,
-  Users,
-  Clock,
-  BarChart2,
-  PlayCircle,
-  CheckCircle,
-  Lock,
-  BookOpen,
-  Award,
+  ArrowLeft, Star, Users, Clock, BookOpen, Award, CheckCircle,
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import LessonPanel from '../components/LessonPanel';
 import api from '../services/api';
 
 const CourseDetail = () => {
@@ -26,10 +18,7 @@ const CourseDetail = () => {
   const [enrollError, setEnrollError] = useState('');
   const [enrollSuccess, setEnrollSuccess] = useState('');
 
-  useEffect(() => {
-    fetchCourse();
-    checkEnrollment();
-  }, [id]);
+  useEffect(() => { fetchCourse(); checkEnrollment(); }, [id]);
 
   const fetchCourse = async () => {
     try {
@@ -45,11 +34,11 @@ const CourseDetail = () => {
   const checkEnrollment = async () => {
     try {
       const res = await api.get('/enrollments/my-courses');
-      const found = res.data.enrollments?.find((e) => e.course?._id === id);
+      const found = res.data.enrollments?.find(
+        (e) => e.courseId === id || e.course?.id === id || e.course?._id === id
+      );
       if (found) setEnrollment(found);
-    } catch (err) {
-      // not enrolled
-    }
+    } catch (_) {}
   };
 
   const handleEnroll = async () => {
@@ -65,6 +54,26 @@ const CourseDetail = () => {
       setEnrolling(false);
     }
   };
+
+  // Called by LessonPanel when a lesson's exercise is passed
+  const handleLessonComplete = useCallback(async (lessonIndex) => {
+    if (!enrollment) return;
+    const prev = enrollment.completedLessons || [];
+    if (prev.includes(lessonIndex)) return;
+    const updated = [...prev, lessonIndex];
+    const lessons = course?.lessons ?? [];
+    const progress = lessons.length > 0 ? Math.round((updated.length / lessons.length) * 100) : 0;
+    try {
+      const res = await api.put(`/enrollments/progress/${id}`, {
+        completedLessons: updated,
+        progress,
+      });
+      setEnrollment(res.data.enrollment);
+    } catch (_) {
+      // optimistic fallback
+      setEnrollment((e) => ({ ...e, completedLessons: updated, progress }));
+    }
+  }, [enrollment, course, id]);
 
   if (loading) {
     return (
@@ -236,47 +245,47 @@ const CourseDetail = () => {
         <div className="px-8 py-6 grid grid-cols-3 gap-6">
           {/* Lessons List */}
           <div className="col-span-2">
-            <h2 className="font-bold text-dark text-lg mb-4 flex items-center gap-2">
-              <BookOpen size={18} />
-              Course Content
-            </h2>
-            <p className="text-sm text-gray-500 mb-4">
-              {course.lessons?.length} lessons • {course.duration}
-            </p>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-bold text-dark text-lg flex items-center gap-2">
+                <BookOpen size={18} /> Course Content
+              </h2>
+              {enrollment && (
+                <span className="text-sm font-semibold text-dark">
+                  {enrollment.completedLessons?.length ?? 0}/{course.lessons?.length} complete
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-400 mb-4">{course.lessons?.length} lessons · {course.duration}</p>
+
+            {/* overall progress bar */}
+            {enrollment && (
+              <div className="mb-5">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-dark rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${enrollment.progress ?? 0}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{enrollment.progress ?? 0}% complete</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               {course.lessons?.map((lesson, index) => {
                 const isCompleted = enrollment?.completedLessons?.includes(index);
                 const isLocked = !enrollment && index > 0;
-
                 return (
-                  <motion.div
+                  <LessonPanel
                     key={index}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.04 }}
-                    className={`flex items-center gap-4 p-4 rounded-xl border transition-colors
-                      ${isCompleted
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-white border-gray-100 hover:border-gray-200'
-                      }`}
-                  >
-                    <div className="flex-shrink-0">
-                      {isCompleted ? (
-                        <CheckCircle size={20} className="text-green-500" />
-                      ) : isLocked ? (
-                        <Lock size={20} className="text-gray-300" />
-                      ) : (
-                        <PlayCircle size={20} className="text-dark" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${isLocked ? 'text-gray-400' : 'text-dark'}`}>
-                        {index + 1}. {lesson.title}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-400 flex-shrink-0">{lesson.duration}</span>
-                  </motion.div>
+                    lesson={lesson}
+                    index={index}
+                    isCompleted={isCompleted}
+                    isLocked={isLocked}
+                    onComplete={handleLessonComplete}
+                    courseColor={course.color}
+                  />
                 );
               })}
             </div>

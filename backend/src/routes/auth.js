@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const supabase = require('../config/supabase');
 const { auth } = require('../middleware/auth');
 
 const generateToken = (user) => {
@@ -100,6 +101,50 @@ router.get('/me', auth, async (req, res, next) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ success: true, user: safeUser(user) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/auth/google
+// Receives the Supabase access_token from the frontend OAuth callback,
+// verifies it, then finds-or-creates the user in our own users table
+// and returns our custom JWT — exactly the same shape as /login.
+router.post('/google', async (req, res, next) => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) {
+      return res.status(400).json({ message: 'access_token is required' });
+    }
+
+    // Verify the token with Supabase and get the Google profile
+    const { data: { user: googleUser }, error } = await supabase.auth.getUser(access_token);
+    if (error || !googleUser) {
+      return res.status(401).json({ message: 'Invalid or expired Google token' });
+    }
+
+    const googleId = googleUser.id;
+    const email    = googleUser.email;
+    const meta     = googleUser.user_metadata ?? {};
+    const name     = meta.full_name || meta.name || email.split('@')[0];
+    const avatar   = meta.avatar_url || meta.picture || '';
+
+    // 1. Try to find the user by their stable Supabase/Google id
+    let user = await User.findByGoogleId(googleId);
+
+    // 2. If not found by google_id, check if the email already exists
+    //    (covers the case where they previously signed up with email/password)
+    if (!user) {
+      user = await User.findOne({ email });
+    }
+
+    // 3. Brand-new user — create a record in our users table
+    if (!user) {
+      user = await User.createOAuth({ name, email, avatar, googleId });
+    }
+
+    const token = generateToken(user);
+    res.json({ success: true, token, user: safeUser(user) });
   } catch (error) {
     next(error);
   }
