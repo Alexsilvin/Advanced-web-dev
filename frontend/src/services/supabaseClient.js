@@ -7,7 +7,13 @@ const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 // the entire app at module-load time when the env vars are not yet configured.
 // Guard with a no-op stub so email/password auth still works without them.
 const supabase = supabaseUrl && supabaseAnon
-  ? createClient(supabaseUrl, supabaseAnon)
+  ? createClient(supabaseUrl, supabaseAnon, {
+      auth: {
+        flowType: 'implicit',   // avoids PKCE server-side code exchange timeout
+        detectSessionInUrl: true,
+        persistSession: true,
+      },
+    })
   : {
       auth: {
         signInWithOAuth: async () => {
