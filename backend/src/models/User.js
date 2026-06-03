@@ -54,32 +54,50 @@ const User = {
   },
 
   async findByGoogleId(googleId) {
+    // google_id column only exists after add_google_auth.sql migration is run.
+    // Return null gracefully if the column is missing so the route falls back
+    // to the email lookup — login still works either way.
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, avatar, bio, role, provider, created_at')
+      .select('id, name, email, avatar, bio, role, created_at')
       .eq('google_id', googleId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) return null;   // column missing → treat as "not found"
     return normalize(data);
   },
 
   async createOAuth({ name, email, avatar, googleId }) {
+    // Base insert — works with the original schema.json (no migration needed)
+    const baseInsert = {
+      name,
+      email,
+      password_hash: null,
+      role: 'student',
+      avatar: avatar || '',
+      bio: '',
+    };
+
+    // Try with the extended columns first (requires add_google_auth.sql)
     const { data, error } = await supabase
       .from('users')
-      .insert([{
-        name,
-        email,
-        password_hash: null,
-        role: 'student',
-        avatar: avatar || '',
-        bio: '',
-        provider: 'google',
-        google_id: googleId,
-      }])
-      .select('id, name, email, avatar, bio, role, provider, created_at')
+      .insert([{ ...baseInsert, provider: 'google', google_id: googleId }])
+      .select('id, name, email, avatar, bio, role, created_at')
       .single();
-    if (error) throw error;
-    return normalize(data);
+
+    if (!error) return normalize(data);
+
+    // If the extended columns don't exist yet, retry with just the base columns
+    if (error.code === '42703' /* undefined_column */ || error.message?.includes('column')) {
+      const { data: fallback, error: fallbackError } = await supabase
+        .from('users')
+        .insert([baseInsert])
+        .select('id, name, email, avatar, bio, role, created_at')
+        .single();
+      if (fallbackError) throw fallbackError;
+      return normalize(fallback);
+    }
+
+    throw error;
   },
 
   async findByIdAndUpdate(id, updates) {

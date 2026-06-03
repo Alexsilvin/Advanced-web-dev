@@ -129,13 +129,12 @@ router.post('/google', async (req, res, next) => {
     const name     = meta.full_name || meta.name || email.split('@')[0];
     const avatar   = meta.avatar_url || meta.picture || '';
 
-    // 1. Try to find the user by their stable Supabase/Google id
-    let user = await User.findByGoogleId(googleId);
+    // 1. Try email lookup first (works even without the migration)
+    let user = await User.findOne({ email });
 
-    // 2. If not found by google_id, check if the email already exists
-    //    (covers the case where they previously signed up with email/password)
+    // 2. If not found by email, try by google_id (requires add_google_auth.sql)
     if (!user) {
-      user = await User.findOne({ email });
+      user = await User.findByGoogleId(googleId);
     }
 
     // 3. Brand-new user — create a record in our users table
